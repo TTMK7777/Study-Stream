@@ -33,6 +33,7 @@ export function LessonView({
         {lesson.sections.map((section) => (
           <section
             key={section.heading}
+            data-section-heading={section.heading}
             className="rounded-md border border-zinc-800 bg-zinc-900/40 p-4"
           >
             <h2 className="flex items-center gap-2 text-base font-semibold">
