@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import type { Lesson, Quiz } from "@/lib/anthropic/schemas";
 
+import { HighlightPopup } from "./highlight-popup";
 import { LessonView } from "./lesson-view";
 import { QuizView } from "./quiz-view";
 
@@ -113,6 +114,7 @@ export function LessonClient({
         <div className="space-y-8">
           <LessonView lesson={state.lesson} cached={state.cached} />
           <QuizView quiz={state.quiz} topicId={topicId} />
+          <HighlightPopup topicId={topicId} />
         </div>
       ) : null}
     </main>
