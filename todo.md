@@ -46,6 +46,7 @@
 - [ ] 各科目の論点を 5 → 10-15 件へ拡張（COO 所見 [R] 反映）
 - [ ] 試用ログから出たバグを fix
 - [ ] (任意) Magic link メール配信を Resend へ切替検討（30/h 上限突破時）
+- [ ] `.env.example` を repo 直下に追加（5 変数のテンプレ + コメント、新規セットアップ時のオンボード時間短縮）
 
 ### CISO Low / Future（後送り可）
 - [ ] L1: `server-only` パッケージで admin client / anthropic SDK の import を強制
