@@ -48,7 +48,29 @@ export default async function HomePage() {
       </header>
 
       {user ? (
-        <SubjectAccordion subjects={subjects} />
+        <>
+          <nav className="flex flex-wrap gap-2 text-xs">
+            <Link
+              href="/dashboard"
+              className="rounded border border-zinc-800 bg-zinc-950 px-3 py-1.5 hover:border-zinc-600 hover:bg-zinc-900"
+            >
+              📊 ダッシュボード
+            </Link>
+            <Link
+              href="/history"
+              className="rounded border border-zinc-800 bg-zinc-950 px-3 py-1.5 hover:border-zinc-600 hover:bg-zinc-900"
+            >
+              📜 学習履歴
+            </Link>
+            <Link
+              href="/highlights"
+              className="rounded border border-zinc-800 bg-zinc-950 px-3 py-1.5 hover:border-zinc-600 hover:bg-zinc-900"
+            >
+              🔖 ハイライト
+            </Link>
+          </nav>
+          <SubjectAccordion subjects={subjects} />
+        </>
       ) : (
         <div className="rounded border border-zinc-800 bg-zinc-950 p-6 text-center">
           <p className="text-sm text-zinc-300">
