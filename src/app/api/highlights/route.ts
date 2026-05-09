@@ -1,10 +1,13 @@
 import { z } from "zod";
 
 import { getTopicById } from "@/content/shindanshi";
+import { checkAndRecord } from "@/lib/rate-limit";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+const ENDPOINT = "/api/highlights";
 
 const PostSchema = z.object({
   topicId: z.string().min(1),
@@ -67,6 +70,16 @@ export async function POST(request: Request) {
   }
 
   const admin = getAdminClient();
+
+  // 60秒60件のレート制限（POST 連打防止）
+  const rl = await checkAndRecord(user.id, ENDPOINT, admin);
+  if (!rl.ok) {
+    return Response.json(
+      { error: "rate limit exceeded" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    );
+  }
+
   const { data, error } = await admin
     .from("highlights")
     .insert({
@@ -108,6 +121,16 @@ export async function DELETE(request: Request) {
   }
 
   const admin = getAdminClient();
+
+  // 60秒60件のレート制限（DELETE 連打防止、POST と同じ枠を共有）
+  const rl = await checkAndRecord(user.id, ENDPOINT, admin);
+  if (!rl.ok) {
+    return Response.json(
+      { error: "rate limit exceeded" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    );
+  }
+
   // user_id でも絞ることで他人の highlights を消せない（防御的二重チェック）
   const { error } = await admin
     .from("highlights")
