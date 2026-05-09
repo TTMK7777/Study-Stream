@@ -2,7 +2,10 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 const PROTECTED_PREFIXES: readonly string[] = [
-  // Sprint 1 で /lesson, /history, /highlights, /dashboard を追加予定
+  "/lesson",
+  "/history",
+  "/highlights",
+  "/dashboard",
 ];
 
 export async function updateSession(request: NextRequest) {
