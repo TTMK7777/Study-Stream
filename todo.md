@@ -1,5 +1,11 @@
 # TODO
 
+## 完了（2026-05-09 PM: 前セッション復旧 + 運用整備）
+
+- [x] PR #28: 前セッションが main 直 commit した docs 5 ファイル（README/ROADMAP/todo/knowledge/memory）を `docs/phase1-handoff` ブランチに退避し PR 経由でマージ
+- [x] PR #29: Dependabot moderate 2 件（postcss <8.5.10 / esbuild <=0.24.2）を `package.json` の `overrides` で解消、`npm audit` 6→0
+- [x] PR #30: Sprint 6 に `.env.example` 整備タスクを追加
+
 ## 完了（2026-05-09: Phase 1 Web MVP）
 
 ### Sprint 0: Bootstrap

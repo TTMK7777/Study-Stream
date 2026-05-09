@@ -4,6 +4,29 @@ Phase 1 構築で確定した技術判断・検証結果・知見。
 
 ---
 
+## npm overrides で transitive 脆弱性のみ強制 upgrade
+
+### 背景
+PR #29 で Dependabot moderate 2 件（postcss XSS / esbuild dev server）を対応した際、`npm audit fix` の `fixAvailable` が **drizzle-kit を 0.18.1、next を 9.3.3 にダウングレード**する破壊的提案を出してきた。
+
+### 採用パターン
+`package.json` の `overrides` で transitive dependency のみ強制 upgrade:
+
+```json
+"overrides": {
+  "postcss": "^8.5.10",
+  "esbuild": ">=0.27.0"
+}
+```
+
+### vite 8 の esbuild 要求と両立
+最初 `esbuild: "^0.25.0"` で書いたら `vite@8.0.11` が `^0.27.0 || ^0.28.0` を要求する peer 警告が出た。`>=0.27.0` に緩めると両者を満たし warning ゼロ。
+
+### 検証順序
+`npm install` → `npm audit`（0件確認）→ `npm run typecheck` → `npm test` → `npm run build` の順で全 pass を確認してから commit。drizzle-kit や next の major bump は CISO 影響大なので `overrides` 案がまず最初に試すべき選択肢。
+
+---
+
 ## Anthropic SDK + tool_use 構造化出力
 
 ### 採用構成
