@@ -38,3 +38,5 @@ coverage/
 # Misc
 .cache/
 *.local
+# Add to .gitignore (missing patterns)
+credentials.json
