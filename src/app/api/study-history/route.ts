@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { getTopicById } from "@/content/shindanshi";
+import { checkAndRecord } from "@/lib/rate-limit";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -9,6 +10,8 @@ const RequestSchema = z.object({
   quizScore: z.number().int().min(0).max(3),
   quizTotal: z.number().int().min(1).max(3).default(3),
 });
+
+const ENDPOINT = "/api/study-history";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +45,16 @@ export async function POST(request: Request) {
   const subjectId = entry.subject.id;
 
   const admin = getAdminClient();
+
+  // 60秒30件のレート制限（POST 連打防止）
+  const rl = await checkAndRecord(user.id, ENDPOINT, admin);
+  if (!rl.ok) {
+    return Response.json(
+      { error: "rate limit exceeded" },
+      { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
+    );
+  }
+
   const { error } = await admin.from("study_history").insert({
     user_id: user.id,
     topic_id: topicId,

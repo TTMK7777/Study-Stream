@@ -3,6 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   checkAndRecord,
   checkMonthlyQuota,
+  ENDPOINT_LIMITS,
   GLOBAL_MONTHLY_LIMIT,
   LESSON_RATE_LIMIT,
   RATE_LIMIT_WINDOW_SEC,
@@ -115,6 +116,47 @@ describe("rate-limit: checkAndRecord", () => {
         client,
       ),
     ).rejects.toThrow(/insert failed/);
+  });
+
+  it("endpoint ごとに上限値が切り替わる: /api/highlights は 60 件まで通る", async () => {
+    // /api/highlights の上限は 60 件
+    const client = makeClient({ count: 30 });
+    const result = await checkAndRecord(
+      "user-1",
+      "/api/highlights",
+      // @ts-expect-error テスト用 mock
+      client,
+    );
+    expect(result).toEqual({ ok: true });
+    expect(client._builder.insert).toHaveBeenCalled();
+  });
+
+  it("endpoint ごとに上限値が切り替わる: /api/study-history は 30 件で reject", async () => {
+    const client = makeClient({ count: 30 });
+    const result = await checkAndRecord(
+      "user-1",
+      "/api/study-history",
+      // @ts-expect-error テスト用 mock
+      client,
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it("未登録エンドポイントは LESSON_RATE_LIMIT (10) フォールバック", async () => {
+    const client = makeClient({ count: 10 });
+    const result = await checkAndRecord(
+      "user-1",
+      "/api/unknown",
+      // @ts-expect-error テスト用 mock
+      client,
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it("ENDPOINT_LIMITS マップが想定値を持つ", () => {
+    expect(ENDPOINT_LIMITS["/api/lesson"]).toBe(LESSON_RATE_LIMIT);
+    expect(ENDPOINT_LIMITS["/api/study-history"]).toBe(30);
+    expect(ENDPOINT_LIMITS["/api/highlights"]).toBe(60);
   });
 
   it("count が null の場合は 0 件として扱う", async () => {

@@ -5,6 +5,16 @@ import { getAdminClient } from "./supabase/admin";
 export const LESSON_RATE_LIMIT = 10;
 export const RATE_LIMIT_WINDOW_SEC = 60;
 
+/**
+ * エンドポイントごとの分次レート制限上限。
+ * 未登録のエンドポイントは LESSON_RATE_LIMIT をデフォルト適用。
+ */
+export const ENDPOINT_LIMITS: Readonly<Record<string, number>> = {
+  "/api/lesson": LESSON_RATE_LIMIT, // 60秒10件（生成コスト発生のため厳格）
+  "/api/study-history": 30, // POST 軽量だが連打 DB 圧迫対策
+  "/api/highlights": 60, // POST/DELETE 軽量、GET は対象外
+};
+
 // 月次クォータ（コスト爆破防止の防御層）
 export const USER_MONTHLY_LIMIT = 50;
 export const GLOBAL_MONTHLY_LIMIT = 200;
@@ -31,6 +41,7 @@ export async function checkAndRecord(
   now: Date = new Date(),
 ): Promise<RateLimitResult> {
   const since = new Date(now.getTime() - RATE_LIMIT_WINDOW_SEC * 1000);
+  const limit = ENDPOINT_LIMITS[endpoint] ?? LESSON_RATE_LIMIT;
 
   const { count, error: countError } = await client
     .from("api_calls")
@@ -43,7 +54,7 @@ export async function checkAndRecord(
     throw new Error(`rate-limit count failed: ${countError.message}`);
   }
 
-  if ((count ?? 0) >= LESSON_RATE_LIMIT) {
+  if ((count ?? 0) >= limit) {
     return { ok: false, retryAfter: RATE_LIMIT_WINDOW_SEC };
   }
 

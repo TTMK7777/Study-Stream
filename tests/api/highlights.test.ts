@@ -8,8 +8,13 @@ vi.mock("@/lib/supabase/admin", () => ({
   getAdminClient: vi.fn(),
 }));
 
+vi.mock("@/lib/rate-limit", () => ({
+  checkAndRecord: vi.fn(),
+}));
+
 const { createClient } = await import("@/lib/supabase/server");
 const { getAdminClient } = await import("@/lib/supabase/admin");
+const { checkAndRecord } = await import("@/lib/rate-limit");
 const { GET, POST, DELETE } = await import("@/app/api/highlights/route");
 
 function makeAuth(user: { id: string } | null) {
@@ -57,6 +62,7 @@ function makeReq(body: unknown, raw = false): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(checkAndRecord).mockResolvedValue({ ok: true });
 });
 
 describe("GET /api/highlights", () => {
@@ -143,6 +149,26 @@ describe("POST /api/highlights", () => {
     expect(res.status).toBe(404);
   });
 
+  it("429: レート制限超過時は Retry-After 付きで返却", async () => {
+    vi.mocked(createClient).mockResolvedValue(
+      makeAuth({ id: "u1" }) as never,
+    );
+    vi.mocked(getAdminClient).mockReturnValue(makeAdmin() as never);
+    vi.mocked(checkAndRecord).mockResolvedValue({
+      ok: false,
+      retryAfter: 60,
+    });
+    const res = await POST(
+      makeReq({
+        topicId: "zaimu-roe",
+        sectionHeading: "ROE",
+        text: "ROE は...",
+      }),
+    );
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("60");
+  });
+
   it("200: INSERT 成功で id を返す", async () => {
     vi.mocked(createClient).mockResolvedValue(
       makeAuth({ id: "u1" }) as never,
@@ -191,5 +217,20 @@ describe("DELETE /api/highlights", () => {
       makeReq({ id: "00000000-0000-4000-8000-000000000000" }),
     );
     expect(res.status).toBe(200);
+  });
+
+  it("429: DELETE もレート制限対象", async () => {
+    vi.mocked(createClient).mockResolvedValue(
+      makeAuth({ id: "u1" }) as never,
+    );
+    vi.mocked(getAdminClient).mockReturnValue(makeAdmin() as never);
+    vi.mocked(checkAndRecord).mockResolvedValue({
+      ok: false,
+      retryAfter: 60,
+    });
+    const res = await DELETE(
+      makeReq({ id: "00000000-0000-4000-8000-000000000000" }),
+    );
+    expect(res.status).toBe(429);
   });
 });
