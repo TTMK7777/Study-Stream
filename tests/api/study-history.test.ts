@@ -8,8 +8,13 @@ vi.mock("@/lib/supabase/admin", () => ({
   getAdminClient: vi.fn(),
 }));
 
+vi.mock("@/lib/rate-limit", () => ({
+  checkAndRecord: vi.fn(),
+}));
+
 const { createClient } = await import("@/lib/supabase/server");
 const { getAdminClient } = await import("@/lib/supabase/admin");
+const { checkAndRecord } = await import("@/lib/rate-limit");
 const { POST } = await import("@/app/api/study-history/route");
 
 function makeAuthClient(user: { id: string } | null) {
@@ -35,6 +40,7 @@ function makeRequest(body: unknown, raw = false): Request {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(checkAndRecord).mockResolvedValue({ ok: true });
 });
 
 describe("POST /api/study-history", () => {
@@ -88,6 +94,25 @@ describe("POST /api/study-history", () => {
       quiz_score: 3,
       quiz_total: 3,
     });
+  });
+
+  it("429: レート制限超過時は Retry-After 付きで返却、INSERT は呼ばない", async () => {
+    vi.mocked(createClient).mockResolvedValue(
+      makeAuthClient({ id: "u1" }) as never,
+    );
+    const admin = makeAdmin();
+    vi.mocked(getAdminClient).mockReturnValue(admin as never);
+    vi.mocked(checkAndRecord).mockResolvedValue({
+      ok: false,
+      retryAfter: 60,
+    });
+
+    const res = await POST(
+      makeRequest({ topicId: "zaimu-roe", quizScore: 2 }),
+    );
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("60");
+    expect(admin._builder.insert).not.toHaveBeenCalled();
   });
 
   it("500: INSERT エラー", async () => {
