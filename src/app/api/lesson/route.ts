@@ -7,7 +7,7 @@ import {
   generateQuiz,
 } from "@/lib/anthropic/generators";
 import type { Lesson, Quiz } from "@/lib/anthropic/schemas";
-import { checkAndRecord } from "@/lib/rate-limit";
+import { checkAndRecord, checkMonthlyQuota } from "@/lib/rate-limit";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -69,7 +69,22 @@ export async function POST(request: Request) {
     });
   }
 
-  // 5. rate-limit（cache miss = 生成コスト発生する場合のみカウント）
+  // 5. monthly quota（コスト爆破防止の防御層、cache miss のみ）
+  const quota = await checkMonthlyQuota(user.id, ENDPOINT, admin);
+  if (!quota.ok) {
+    return Response.json(
+      {
+        error:
+          quota.reason === "user"
+            ? "monthly user quota exceeded"
+            : "monthly global budget reached",
+        current: quota.current,
+      },
+      { status: 429, headers: { "Retry-After": "86400" } },
+    );
+  }
+
+  // 6. minute rate-limit（cache miss = 生成コスト発生する場合のみカウント）
   const rl = await checkAndRecord(user.id, ENDPOINT, admin);
   if (!rl.ok) {
     return Response.json(

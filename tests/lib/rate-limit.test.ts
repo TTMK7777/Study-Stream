@@ -2,8 +2,11 @@ import { describe, it, expect, vi } from "vitest";
 
 import {
   checkAndRecord,
+  checkMonthlyQuota,
+  GLOBAL_MONTHLY_LIMIT,
   LESSON_RATE_LIMIT,
   RATE_LIMIT_WINDOW_SEC,
+  USER_MONTHLY_LIMIT,
 } from "@/lib/rate-limit";
 
 function makeClient(opts: {
@@ -24,6 +27,37 @@ function makeClient(opts: {
     from: vi.fn(() => builder),
     _builder: builder,
   };
+}
+
+/**
+ * 月次クォータ用: 1回目の count 呼び出し（user）と2回目の count 呼び出し（global）で
+ * 異なる値を返すクライアント。`checkMonthlyQuota` の挙動検証に使う。
+ */
+function makeQuotaClient(opts: {
+  userCount?: number;
+  globalCount?: number;
+  userError?: { message: string } | null;
+  globalError?: { message: string } | null;
+}) {
+  let queryIndex = 0;
+  const builder = {
+    select: vi.fn(() => builder),
+    eq: vi.fn(() => builder),
+    gte: vi.fn(async () => {
+      const idx = queryIndex++;
+      if (idx === 0) {
+        return {
+          count: opts.userCount ?? 0,
+          error: opts.userError ?? null,
+        };
+      }
+      return {
+        count: opts.globalCount ?? 0,
+        error: opts.globalError ?? null,
+      };
+    }),
+  };
+  return { from: vi.fn(() => builder), _builder: builder };
 }
 
 describe("rate-limit: checkAndRecord", () => {
@@ -93,5 +127,85 @@ describe("rate-limit: checkAndRecord", () => {
       client,
     );
     expect(result).toEqual({ ok: true });
+  });
+});
+
+describe("rate-limit: checkMonthlyQuota", () => {
+  it("user/global ともに上限内 → ok:true", async () => {
+    const client = makeQuotaClient({
+      userCount: USER_MONTHLY_LIMIT - 1,
+      globalCount: GLOBAL_MONTHLY_LIMIT - 1,
+    });
+    const result = await checkMonthlyQuota(
+      "user-1",
+      "/api/lesson",
+      // @ts-expect-error テスト用 mock
+      client,
+    );
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("user 上限到達 → reason:user で reject", async () => {
+    const client = makeQuotaClient({
+      userCount: USER_MONTHLY_LIMIT,
+      globalCount: 0,
+    });
+    const result = await checkMonthlyQuota(
+      "user-1",
+      "/api/lesson",
+      // @ts-expect-error テスト用 mock
+      client,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("user");
+      expect(result.current).toBe(USER_MONTHLY_LIMIT);
+    }
+  });
+
+  it("user 内 / global 上限到達 → reason:global で reject", async () => {
+    const client = makeQuotaClient({
+      userCount: 1,
+      globalCount: GLOBAL_MONTHLY_LIMIT,
+    });
+    const result = await checkMonthlyQuota(
+      "user-1",
+      "/api/lesson",
+      // @ts-expect-error テスト用 mock
+      client,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("global");
+    }
+  });
+
+  it("user count エラーは throw（global は問い合わせない）", async () => {
+    const client = makeQuotaClient({
+      userError: { message: "DB" },
+    });
+    await expect(
+      checkMonthlyQuota(
+        "user-1",
+        "/api/lesson",
+        // @ts-expect-error テスト用 mock
+        client,
+      ),
+    ).rejects.toThrow(/monthly user/);
+  });
+
+  it("global count エラーは throw", async () => {
+    const client = makeQuotaClient({
+      userCount: 0,
+      globalError: { message: "DB" },
+    });
+    await expect(
+      checkMonthlyQuota(
+        "user-1",
+        "/api/lesson",
+        // @ts-expect-error テスト用 mock
+        client,
+      ),
+    ).rejects.toThrow(/monthly global/);
   });
 });
