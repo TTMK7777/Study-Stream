@@ -2,6 +2,13 @@
 
 更新日: 2026-05-09
 
+## ステータス
+
+- ✅ Phase 0 完了（claude.ai Artifact プロトタイプ、保守継続）
+- ✅ **Phase 1 完了**（Next.js + Supabase Web MVP、PR #10-#27 / 12 マージ / 93 テスト PASS）
+- 🟡 Sprint 6（任意・3-5日想定）: 論点を各 5 → 10-15 件へ拡張、運用初期バグ収集
+- ⏳ Phase 2 計画中: 2 次試験対応、AI 採点
+
 ## Phase 0 — プロトタイプ（完了）
 
 claude.ai Artifact 上で動作する単一 React コンポーネント。コンセプト検証済み。
@@ -15,7 +22,7 @@ claude.ai Artifact 上で動作する単一 React コンポーネント。コン
 - 並列 API（lesson + quiz 同時生成）で待ち時間が許容範囲に収まる
 - ハイライト機能の document-level mouseup 実装で複数 div 跨ぎ選択も拾える
 
-## Phase 1 — 1 次試験基盤（4-8 週、Web 公開 MVP）
+## Phase 1 — 1 次試験基盤（✅ 完了 2026-05-09）
 
 ### Goal
 中小企業診断士 1 次試験 7 科目をカバーし、ブラウザで誰でも使える Web アプリにする。
@@ -42,9 +49,16 @@ claude.ai Artifact 上で動作する単一 React コンポーネント。コン
   - 苦手論点フラグ（正答率 < 60% を自動マーク）
 
 ### 終了条件
-- 7 科目全論点でレッスン生成が動作
-- 認証ユーザーが履歴・ハイライトをデバイス跨ぎで参照可
-- ベータユーザー 5 名で 1 週間継続使用 → 致命的バグなし
+- 7 科目全論点でレッスン生成が動作 ✅
+- 認証ユーザーが履歴・ハイライトをデバイス跨ぎで参照可 ✅
+- ベータユーザー 5 名で 1 週間継続使用 → 致命的バグなし（**Sprint 6 / 運用フェーズで検証**）
+
+### 実装結果
+- 12 PR（#10-#17, #23-#27、リカバリで #18-#22 は CLOSED）
+- 93 テスト全 PASS
+- 11 ルート（/, /login, /auth/callback, /api/lesson, /api/study-history, /api/highlights, /lesson/[topicId], /history, /highlights, /dashboard, /_not-found）
+- 取締役会 + CISO レビュー反映（PR #26-#27）
+- 各科目 5 論点（35 件）からスタート、Sprint 6 で 10-15 件へ
 
 ## Phase 2 — 2 次試験対応（+4-6 週）
 
