@@ -42,5 +42,9 @@
     "tsx": "^4.21.0",
     "typescript": "^5",
     "vitest": "^4.1.5"
+  },
+  "overrides": {
+    "postcss": "^8.5.10",
+    "esbuild": ">=0.27.0"
   }
 }
