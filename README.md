@@ -2,14 +2,18 @@
 
 YouTube ライクな受動視聴 UX に **インプット → 即テスト** ループを組み合わせ、AI がリアルタイムにレッスン+クイズを生成する学習アプリ。
 
-## 現状: Phase 0（プロトタイプ）
+## 現状: Phase 1 Sprint 0 進行中（2026-05-09 着手）
+
+Next.js 16 + Supabase + Drizzle で Web MVP 化中。プラン詳細は `C:\Users\ttsuj\.claude\plans\silly-frolicking-meteor.md` 参照。
+
+### Phase 0（完了）
 
 - claude.ai Artifact 環境で動作する単一 React コンポーネント (`prototype/study-stream.jsx`, 659 行)
 - 中小企業診断士試験の一部トピック（財務会計 / 経済学 / 中小企業政策 / IT）8 種をプリセット
 - カスタム入力で任意トピックも学習可能
 - レッスン4セクション（テキスト + bar/metrics/comparison ビジュアル）→ 4択クイズ3問 → 結果
 
-> **そのままでは公開不可**。API キーがクライアント直叩き、永続化なし。詳細は [Issues](https://github.com/TTMK7777/Study-Stream/issues) と [`ROADMAP.md`](ROADMAP.md) 参照。
+> **prototype/ はそのままでは公開不可**（API キーがクライアント直叩き、永続化なし）。Phase 1 で Web MVP 化する。詳細は [Issues](https://github.com/TTMK7777/Study-Stream/issues) と [`ROADMAP.md`](ROADMAP.md) 参照。
 
 ## 目標
 
