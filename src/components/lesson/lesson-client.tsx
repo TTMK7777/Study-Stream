@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { Lesson, Quiz } from "@/lib/anthropic/schemas";
 
 import { LessonView } from "./lesson-view";
+import { QuizView } from "./quiz-view";
 
 type Props = {
   topicId: string;
@@ -109,14 +110,10 @@ export function LessonClient({
       ) : null}
 
       {state.phase === "idle" ? (
-        <>
+        <div className="space-y-8">
           <LessonView lesson={state.lesson} cached={state.cached} />
-          <div className="mt-8 rounded-md border border-zinc-800 bg-zinc-950 p-4 text-center">
-            <p className="text-xs text-zinc-500">
-              （クイズ {state.quiz.length} 問は次の PR で表示します）
-            </p>
-          </div>
-        </>
+          <QuizView quiz={state.quiz} topicId={topicId} />
+        </div>
       ) : null}
     </main>
   );
