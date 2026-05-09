@@ -15,6 +15,7 @@ vi.mock("@/lib/anthropic/generators", () => ({
 
 vi.mock("@/lib/rate-limit", () => ({
   checkAndRecord: vi.fn(),
+  checkMonthlyQuota: vi.fn(),
 }));
 
 vi.mock("@/lib/anthropic", () => ({
@@ -27,7 +28,9 @@ const { getAdminClient } = await import("@/lib/supabase/admin");
 const { generateLesson, generateQuiz } = await import(
   "@/lib/anthropic/generators"
 );
-const { checkAndRecord } = await import("@/lib/rate-limit");
+const { checkAndRecord, checkMonthlyQuota } = await import(
+  "@/lib/rate-limit"
+);
 const { POST } = await import("@/app/api/lesson/route");
 
 type AdminMock = ReturnType<typeof makeAdmin>;
@@ -146,6 +149,7 @@ describe("POST /api/lesson", () => {
     );
     const admin = makeAdmin();
     vi.mocked(getAdminClient).mockReturnValue(admin as never);
+    vi.mocked(checkMonthlyQuota).mockResolvedValue({ ok: true });
     vi.mocked(checkAndRecord).mockResolvedValue({ ok: true });
     vi.mocked(generateLesson).mockResolvedValue({
       data: FAKE_LESSON as never,
@@ -170,11 +174,12 @@ describe("POST /api/lesson", () => {
     expect(admin._cacheBuilder.insert).toHaveBeenCalled();
   });
 
-  it("429: rate-limit 超過時は Retry-After 付きで返却", async () => {
+  it("429: 分次 rate-limit 超過時は Retry-After 付きで返却", async () => {
     vi.mocked(createClient).mockResolvedValue(
       makeAuthClient({ id: "u1" }) as never,
     );
     vi.mocked(getAdminClient).mockReturnValue(makeAdmin() as never);
+    vi.mocked(checkMonthlyQuota).mockResolvedValue({ ok: true });
     vi.mocked(checkAndRecord).mockResolvedValue({
       ok: false,
       retryAfter: 60,
@@ -186,11 +191,49 @@ describe("POST /api/lesson", () => {
     expect(generateLesson).not.toHaveBeenCalled();
   });
 
+  it("429 monthly user: 個人月次クォータ超過は user reason で返却", async () => {
+    vi.mocked(createClient).mockResolvedValue(
+      makeAuthClient({ id: "u1" }) as never,
+    );
+    vi.mocked(getAdminClient).mockReturnValue(makeAdmin() as never);
+    vi.mocked(checkMonthlyQuota).mockResolvedValue({
+      ok: false,
+      reason: "user",
+      current: 50,
+    });
+
+    const res = await POST(makeRequest({ topicId: "zaimu-roe" }));
+    expect(res.status).toBe(429);
+    expect(res.headers.get("Retry-After")).toBe("86400");
+    const body = await res.json();
+    expect(body.error).toContain("user quota");
+    expect(generateLesson).not.toHaveBeenCalled();
+    expect(checkAndRecord).not.toHaveBeenCalled();
+  });
+
+  it("429 monthly global: 全体月次予算到達は global reason で返却", async () => {
+    vi.mocked(createClient).mockResolvedValue(
+      makeAuthClient({ id: "u1" }) as never,
+    );
+    vi.mocked(getAdminClient).mockReturnValue(makeAdmin() as never);
+    vi.mocked(checkMonthlyQuota).mockResolvedValue({
+      ok: false,
+      reason: "global",
+      current: 200,
+    });
+
+    const res = await POST(makeRequest({ topicId: "zaimu-roe" }));
+    expect(res.status).toBe(429);
+    const body = await res.json();
+    expect(body.error).toContain("global budget");
+  });
+
   it("502: generator throw 時は generation failed", async () => {
     vi.mocked(createClient).mockResolvedValue(
       makeAuthClient({ id: "u1" }) as never,
     );
     vi.mocked(getAdminClient).mockReturnValue(makeAdmin() as never);
+    vi.mocked(checkMonthlyQuota).mockResolvedValue({ ok: true });
     vi.mocked(checkAndRecord).mockResolvedValue({ ok: true });
     vi.mocked(generateLesson).mockRejectedValue(new Error("anthropic 5xx"));
     vi.mocked(generateQuiz).mockResolvedValue({
@@ -210,6 +253,7 @@ describe("POST /api/lesson", () => {
       insertError: { message: "duplicate key value violates unique constraint" },
     });
     vi.mocked(getAdminClient).mockReturnValue(admin as never);
+    vi.mocked(checkMonthlyQuota).mockResolvedValue({ ok: true });
     vi.mocked(checkAndRecord).mockResolvedValue({ ok: true });
     vi.mocked(generateLesson).mockResolvedValue({
       data: FAKE_LESSON as never,
