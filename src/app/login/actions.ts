@@ -1,7 +1,5 @@
 "use server";
 
-import { headers } from "next/headers";
-
 import { createClient } from "@/lib/supabase/server";
 
 export type LoginResult = { ok: true } | { ok: false; error: string };
@@ -12,10 +10,7 @@ export async function signInWithMagicLink(email: string): Promise<LoginResult> {
   }
 
   const supabase = await createClient();
-  const h = await headers();
-  const origin =
-    h.get("origin") ??
-    (h.get("host") ? `https://${h.get("host")}` : "http://localhost:3000");
+  const origin = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
   const { error } = await supabase.auth.signInWithOtp({
     email,
