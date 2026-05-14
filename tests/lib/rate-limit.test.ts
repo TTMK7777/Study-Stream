@@ -11,23 +11,14 @@ import {
 } from "@/lib/rate-limit";
 
 function makeClient(opts: {
-  count?: number;
-  countError?: { message: string } | null;
-  insertError?: { message: string } | null;
+  rpcData?: { ok: boolean; retry_after?: number } | null;
+  rpcError?: { message: string } | null;
 }) {
-  const builder = {
-    select: vi.fn(() => builder),
-    eq: vi.fn(() => builder),
-    gte: vi.fn(async () => ({
-      count: opts.count ?? 0,
-      error: opts.countError ?? null,
-    })),
-    insert: vi.fn(async () => ({ error: opts.insertError ?? null })),
-  };
-  return {
-    from: vi.fn(() => builder),
-    _builder: builder,
-  };
+  const rpc = vi.fn(async () => ({
+    data: opts.rpcData === undefined ? { ok: true } : opts.rpcData,
+    error: opts.rpcError ?? null,
+  }));
+  return { rpc, _rpc: rpc };
 }
 
 /**
@@ -62,8 +53,8 @@ function makeQuotaClient(opts: {
 }
 
 describe("rate-limit: checkAndRecord", () => {
-  it("カウント < 上限 → INSERT して ok:true", async () => {
-    const client = makeClient({ count: LESSON_RATE_LIMIT - 1 });
+  it("RPC が ok:true を返したら ok:true を返す", async () => {
+    const client = makeClient({ rpcData: { ok: true } });
     const result = await checkAndRecord(
       "user-1",
       "/api/lesson",
@@ -71,11 +62,18 @@ describe("rate-limit: checkAndRecord", () => {
       client,
     );
     expect(result).toEqual({ ok: true });
-    expect(client._builder.insert).toHaveBeenCalled();
+    expect(client._rpc).toHaveBeenCalledWith("check_and_record_rate_limit", {
+      p_user_id: "user-1",
+      p_endpoint: "/api/lesson",
+      p_limit: LESSON_RATE_LIMIT,
+      p_window_seconds: RATE_LIMIT_WINDOW_SEC,
+    });
   });
 
-  it("カウント = 上限 → ok:false で retryAfter", async () => {
-    const client = makeClient({ count: LESSON_RATE_LIMIT });
+  it("RPC が ok:false を返したら retryAfter 付きで reject", async () => {
+    const client = makeClient({
+      rpcData: { ok: false, retry_after: RATE_LIMIT_WINDOW_SEC },
+    });
     const result = await checkAndRecord(
       "user-1",
       "/api/lesson",
@@ -86,12 +84,11 @@ describe("rate-limit: checkAndRecord", () => {
       ok: false,
       retryAfter: RATE_LIMIT_WINDOW_SEC,
     });
-    expect(client._builder.insert).not.toHaveBeenCalled();
   });
 
-  it("count エラーは throw", async () => {
+  it("RPC エラーは throw", async () => {
     const client = makeClient({
-      countError: { message: "DB down" },
+      rpcError: { message: "function does not exist" },
     });
     await expect(
       checkAndRecord(
@@ -100,14 +97,11 @@ describe("rate-limit: checkAndRecord", () => {
         // @ts-expect-error テスト用 mock
         client,
       ),
-    ).rejects.toThrow(/count failed/);
+    ).rejects.toThrow(/RPC failed/);
   });
 
-  it("INSERT エラーは throw", async () => {
-    const client = makeClient({
-      count: 0,
-      insertError: { message: "permission denied" },
-    });
+  it("RPC 戻り値が null の場合は throw", async () => {
+    const client = makeClient({ rpcData: null });
     await expect(
       checkAndRecord(
         "user-1",
@@ -115,42 +109,35 @@ describe("rate-limit: checkAndRecord", () => {
         // @ts-expect-error テスト用 mock
         client,
       ),
-    ).rejects.toThrow(/insert failed/);
+    ).rejects.toThrow(/returned null/);
   });
 
-  it("endpoint ごとに上限値が切り替わる: /api/highlights は 60 件まで通る", async () => {
-    // /api/highlights の上限は 60 件
-    const client = makeClient({ count: 30 });
-    const result = await checkAndRecord(
+  it("/api/highlights の上限 (60) が p_limit に渡る", async () => {
+    const client = makeClient({ rpcData: { ok: true } });
+    await checkAndRecord(
       "user-1",
       "/api/highlights",
       // @ts-expect-error テスト用 mock
       client,
     );
-    expect(result).toEqual({ ok: true });
-    expect(client._builder.insert).toHaveBeenCalled();
-  });
-
-  it("endpoint ごとに上限値が切り替わる: /api/study-history は 30 件で reject", async () => {
-    const client = makeClient({ count: 30 });
-    const result = await checkAndRecord(
-      "user-1",
-      "/api/study-history",
-      // @ts-expect-error テスト用 mock
-      client,
+    expect(client._rpc).toHaveBeenCalledWith(
+      "check_and_record_rate_limit",
+      expect.objectContaining({ p_limit: 60 }),
     );
-    expect(result.ok).toBe(false);
   });
 
   it("未登録エンドポイントは LESSON_RATE_LIMIT (10) フォールバック", async () => {
-    const client = makeClient({ count: 10 });
-    const result = await checkAndRecord(
+    const client = makeClient({ rpcData: { ok: true } });
+    await checkAndRecord(
       "user-1",
       "/api/unknown",
       // @ts-expect-error テスト用 mock
       client,
     );
-    expect(result.ok).toBe(false);
+    expect(client._rpc).toHaveBeenCalledWith(
+      "check_and_record_rate_limit",
+      expect.objectContaining({ p_limit: LESSON_RATE_LIMIT }),
+    );
   });
 
   it("ENDPOINT_LIMITS マップが想定値を持つ", () => {
@@ -159,16 +146,19 @@ describe("rate-limit: checkAndRecord", () => {
     expect(ENDPOINT_LIMITS["/api/highlights"]).toBe(60);
   });
 
-  it("count が null の場合は 0 件として扱う", async () => {
-    // Supabase の count が null になるエッジケース
-    const client = makeClient({});
+  it("retry_after が未設定なら RATE_LIMIT_WINDOW_SEC フォールバック", async () => {
+    const client = makeClient({ rpcData: { ok: false } });
     const result = await checkAndRecord(
       "user-1",
       "/api/lesson",
       // @ts-expect-error テスト用 mock
       client,
     );
-    expect(result).toEqual({ ok: true });
+    if (!result.ok) {
+      expect(result.retryAfter).toBe(RATE_LIMIT_WINDOW_SEC);
+    } else {
+      throw new Error("expected ok:false");
+    }
   });
 });
 
