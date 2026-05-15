@@ -29,8 +29,12 @@ export type QuotaResult =
   | { ok: false; reason: "user" | "global"; current: number };
 
 /**
- * 過去 RATE_LIMIT_WINDOW_SEC 秒の api_calls をカウントし、
- * LESSON_RATE_LIMIT 未満なら INSERT して ok:true を返す。
+ * count + INSERT をアトミックに行うレート制限チェック。
+ *
+ * Postgres 関数 check_and_record_rate_limit() で advisory lock を取得し、
+ * (user_id, endpoint) ペアごとに直列化することで TOCTOU 競合を排除する。
+ * 旧実装は SELECT count -> INSERT が非アトミックで、N 本の並列リクエストが
+ * 同時に SELECT 完了 -> 全部 INSERT で制限すり抜けが可能だった (Issue #40 H-1)。
  *
  * service_role での実行を前提（api_calls は RLS で authenticated 完全 deny）。
  */
@@ -38,35 +42,27 @@ export async function checkAndRecord(
   userId: string,
   endpoint: string,
   client: SupabaseClient = getAdminClient(),
-  now: Date = new Date(),
+  _now: Date = new Date(),
 ): Promise<RateLimitResult> {
-  const since = new Date(now.getTime() - RATE_LIMIT_WINDOW_SEC * 1000);
   const limit = ENDPOINT_LIMITS[endpoint] ?? LESSON_RATE_LIMIT;
 
-  const { count, error: countError } = await client
-    .from("api_calls")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userId)
-    .eq("endpoint", endpoint)
-    .gte("called_at", since.toISOString());
+  const { data, error } = await client.rpc("check_and_record_rate_limit", {
+    p_user_id: userId,
+    p_endpoint: endpoint,
+    p_limit: limit,
+    p_window_seconds: RATE_LIMIT_WINDOW_SEC,
+  });
 
-  if (countError) {
-    throw new Error(`rate-limit count failed: ${countError.message}`);
+  if (error) {
+    throw new Error(`rate-limit RPC failed: ${error.message}`);
   }
 
-  if ((count ?? 0) >= limit) {
-    return { ok: false, retryAfter: RATE_LIMIT_WINDOW_SEC };
+  const result = data as { ok: boolean; retry_after?: number } | null;
+  if (!result) {
+    throw new Error("rate-limit RPC returned null");
   }
-
-  const { error: insertError } = await client
-    .from("api_calls")
-    .insert({ user_id: userId, endpoint });
-
-  if (insertError) {
-    throw new Error(`rate-limit insert failed: ${insertError.message}`);
-  }
-
-  return { ok: true };
+  if (result.ok) return { ok: true };
+  return { ok: false, retryAfter: result.retry_after ?? RATE_LIMIT_WINDOW_SEC };
 }
 
 /**
