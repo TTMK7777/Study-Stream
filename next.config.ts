@@ -3,9 +3,16 @@ import type { NextConfig } from "next";
 // Content-Security-Policy
 // Next.js は inline script/style を多用する（Hydration / styled-jsx）ため
 // 'unsafe-inline' を許容。connect-src で Supabase へのアクセスを許可。
+// 'unsafe-eval' は dev mode（React Refresh / Fast Refresh）でのみ必要。
+// 本番ビルドでは削除し、XSS から任意コード実行への直結経路を遮断する。
+const isDev = process.env.NODE_ENV === "development";
+const scriptSrc = isDev
+  ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'"
+  : "script-src 'self' 'unsafe-inline'";
+
 const CSP_DIRECTIVES = [
   "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  scriptSrc,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
