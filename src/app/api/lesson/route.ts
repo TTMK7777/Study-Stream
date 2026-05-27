@@ -7,7 +7,11 @@ import {
   generateQuiz,
 } from "@/lib/anthropic/generators";
 import type { Lesson, Quiz } from "@/lib/anthropic/schemas";
-import { checkAndRecord, checkMonthlyQuota } from "@/lib/rate-limit";
+import {
+  GLOBAL_MONTHLY_LIMIT,
+  USER_MONTHLY_LIMIT,
+  checkAndRecord,
+} from "@/lib/rate-limit";
 import { getAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -69,26 +73,26 @@ export async function POST(request: Request) {
     });
   }
 
-  // 5. monthly quota（コスト爆破防止の防御層、cache miss のみ）
-  const quota = await checkMonthlyQuota(user.id, ENDPOINT, admin);
-  if (!quota.ok) {
-    return Response.json(
-      {
-        error:
-          quota.reason === "user"
-            ? "monthly user quota exceeded"
-            : "monthly global budget reached",
-        current: quota.current,
-      },
-      { status: 429, headers: { "Retry-After": "86400" } },
-    );
-  }
-
-  // 6. minute rate-limit（cache miss = 生成コスト発生する場合のみカウント）
-  const rl = await checkAndRecord(user.id, ENDPOINT, admin);
+  // 5. rate-limit + monthly quota（コスト爆破防止の防御層、cache miss のみ）
+  //
+  // Issue #48 H-1: 分次レート制限と月次クォータ (USER / GLOBAL) を同一
+  // advisory lock・同一トランザクションで検証する。旧実装では
+  // checkMonthlyQuota (SELECT のみ) と checkAndRecord (advisory lock + INSERT)
+  // が別トランザクションで実行されていたため、並列リクエストが両方を
+  // すり抜けて月次上限を大幅超過する TOCTOU 競合があった。
+  const rl = await checkAndRecord(user.id, ENDPOINT, admin, {
+    monthlyLimit: USER_MONTHLY_LIMIT,
+    globalMonthlyLimit: GLOBAL_MONTHLY_LIMIT,
+  });
   if (!rl.ok) {
+    const errorMessage =
+      rl.reason === "monthly_user"
+        ? "monthly user quota exceeded"
+        : rl.reason === "monthly_global"
+          ? "monthly global budget reached"
+          : "rate limit exceeded";
     return Response.json(
-      { error: "rate limit exceeded" },
+      { error: errorMessage },
       { status: 429, headers: { "Retry-After": String(rl.retryAfter) } },
     );
   }
