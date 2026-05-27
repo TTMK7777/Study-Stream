@@ -156,6 +156,7 @@ describe("POST /api/highlights", () => {
     vi.mocked(getAdminClient).mockReturnValue(makeAdmin() as never);
     vi.mocked(checkAndRecord).mockResolvedValue({
       ok: false,
+      reason: "minute",
       retryAfter: 60,
     });
     const res = await POST(
@@ -226,6 +227,7 @@ describe("DELETE /api/highlights", () => {
     vi.mocked(getAdminClient).mockReturnValue(makeAdmin() as never);
     vi.mocked(checkAndRecord).mockResolvedValue({
       ok: false,
+      reason: "minute",
       retryAfter: 60,
     });
     const res = await DELETE(

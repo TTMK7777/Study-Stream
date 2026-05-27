@@ -20,9 +20,18 @@ export const USER_MONTHLY_LIMIT = 50;
 export const GLOBAL_MONTHLY_LIMIT = 200;
 export const MONTHLY_WINDOW_SEC = 30 * 24 * 60 * 60;
 
+export type RateLimitReason = "minute" | "monthly_user" | "monthly_global";
+
 export type RateLimitResult =
   | { ok: true }
-  | { ok: false; retryAfter: number };
+  | { ok: false; reason: RateLimitReason; retryAfter: number };
+
+export type CheckAndRecordOptions = {
+  /** ユーザー単位の月次上限。0 / 未指定の場合は月次チェックをスキップ。 */
+  monthlyLimit?: number;
+  /** 全体（全ユーザー合計）の月次上限。0 / 未指定の場合は月次チェックをスキップ。 */
+  globalMonthlyLimit?: number;
+};
 
 export type QuotaResult =
   | { ok: true }
@@ -36,33 +45,49 @@ export type QuotaResult =
  * 旧実装は SELECT count -> INSERT が非アトミックで、N 本の並列リクエストが
  * 同時に SELECT 完了 -> 全部 INSERT で制限すり抜けが可能だった (Issue #40 H-1)。
  *
+ * Issue #48 H-1: 月次クォータ (USER / GLOBAL) を options で渡すと、同一の
+ * advisory lock・同一トランザクション内で月次 COUNT もアトミックに検証する。
+ * `checkMonthlyQuota` (SELECT のみ) を別個に呼ぶ旧実装は TOCTOU 競合を持つため
+ * 廃止し、本関数に統合された月次チェック経路を使うこと。
+ *
  * service_role での実行を前提（api_calls は RLS で authenticated 完全 deny）。
  */
 export async function checkAndRecord(
   userId: string,
   endpoint: string,
   client: SupabaseClient = getAdminClient(),
+  options: CheckAndRecordOptions = {},
   _now: Date = new Date(),
 ): Promise<RateLimitResult> {
   const limit = ENDPOINT_LIMITS[endpoint] ?? LESSON_RATE_LIMIT;
+  const monthlyLimit = options.monthlyLimit ?? 0;
+  const globalMonthlyLimit = options.globalMonthlyLimit ?? 0;
 
   const { data, error } = await client.rpc("check_and_record_rate_limit", {
     p_user_id: userId,
     p_endpoint: endpoint,
     p_limit: limit,
     p_window_seconds: RATE_LIMIT_WINDOW_SEC,
+    p_monthly_limit: monthlyLimit,
+    p_global_monthly_limit: globalMonthlyLimit,
   });
 
   if (error) {
     throw new Error(`rate-limit RPC failed: ${error.message}`);
   }
 
-  const result = data as { ok: boolean; retry_after?: number } | null;
+  const result = data as
+    | { ok: boolean; reason?: RateLimitReason; retry_after?: number }
+    | null;
   if (!result) {
     throw new Error("rate-limit RPC returned null");
   }
   if (result.ok) return { ok: true };
-  return { ok: false, retryAfter: result.retry_after ?? RATE_LIMIT_WINDOW_SEC };
+  return {
+    ok: false,
+    reason: result.reason ?? "minute",
+    retryAfter: result.retry_after ?? RATE_LIMIT_WINDOW_SEC,
+  };
 }
 
 /**
@@ -71,6 +96,12 @@ export async function checkAndRecord(
  *
  * - USER_MONTHLY_LIMIT: 個人ユーザーごと
  * - GLOBAL_MONTHLY_LIMIT: 全体予算（攻撃者が多数アカウント作成しても全体上限で頭打ち）
+ *
+ * @deprecated Issue #48 H-1 で TOCTOU 競合があると判明したため、
+ * 新規呼び出し元は `checkAndRecord(userId, endpoint, client, { monthlyLimit, globalMonthlyLimit })`
+ * を使うこと。本関数は SELECT のみで advisory lock を取らず、`checkAndRecord` の INSERT との
+ * 間で別トランザクションになるため、並列リクエストでクォータをすり抜ける。
+ * 互換目的でのみ残置。
  */
 export async function checkMonthlyQuota(
   userId: string,

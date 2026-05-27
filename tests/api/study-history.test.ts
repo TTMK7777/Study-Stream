@@ -104,6 +104,7 @@ describe("POST /api/study-history", () => {
     vi.mocked(getAdminClient).mockReturnValue(admin as never);
     vi.mocked(checkAndRecord).mockResolvedValue({
       ok: false,
+      reason: "minute",
       retryAfter: 60,
     });
 

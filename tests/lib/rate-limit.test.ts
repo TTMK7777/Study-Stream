@@ -11,7 +11,13 @@ import {
 } from "@/lib/rate-limit";
 
 function makeClient(opts: {
-  rpcData?: { ok: boolean; retry_after?: number } | null;
+  rpcData?:
+    | {
+        ok: boolean;
+        reason?: "minute" | "monthly_user" | "monthly_global";
+        retry_after?: number;
+      }
+    | null;
   rpcError?: { message: string } | null;
 }) {
   const rpc = vi.fn(async () => ({
@@ -67,12 +73,36 @@ describe("rate-limit: checkAndRecord", () => {
       p_endpoint: "/api/lesson",
       p_limit: LESSON_RATE_LIMIT,
       p_window_seconds: RATE_LIMIT_WINDOW_SEC,
+      p_monthly_limit: 0,
+      p_global_monthly_limit: 0,
     });
   });
 
-  it("RPC が ok:false を返したら retryAfter 付きで reject", async () => {
+  it("monthlyLimit / globalMonthlyLimit を渡すと RPC に転送される (TOCTOU 統合経路)", async () => {
+    const client = makeClient({ rpcData: { ok: true } });
+    await checkAndRecord(
+      "user-1",
+      "/api/lesson",
+      // @ts-expect-error テスト用 mock
+      client,
+      { monthlyLimit: USER_MONTHLY_LIMIT, globalMonthlyLimit: GLOBAL_MONTHLY_LIMIT },
+    );
+    expect(client._rpc).toHaveBeenCalledWith(
+      "check_and_record_rate_limit",
+      expect.objectContaining({
+        p_monthly_limit: USER_MONTHLY_LIMIT,
+        p_global_monthly_limit: GLOBAL_MONTHLY_LIMIT,
+      }),
+    );
+  });
+
+  it("RPC が ok:false (minute) を返したら reason:minute と retryAfter 付きで reject", async () => {
     const client = makeClient({
-      rpcData: { ok: false, retry_after: RATE_LIMIT_WINDOW_SEC },
+      rpcData: {
+        ok: false,
+        reason: "minute",
+        retry_after: RATE_LIMIT_WINDOW_SEC,
+      },
     });
     const result = await checkAndRecord(
       "user-1",
@@ -82,7 +112,44 @@ describe("rate-limit: checkAndRecord", () => {
     );
     expect(result).toEqual({
       ok: false,
+      reason: "minute",
       retryAfter: RATE_LIMIT_WINDOW_SEC,
+    });
+  });
+
+  it("RPC が ok:false (monthly_user) を返したら reason:monthly_user で reject", async () => {
+    const client = makeClient({
+      rpcData: { ok: false, reason: "monthly_user", retry_after: 86400 },
+    });
+    const result = await checkAndRecord(
+      "user-1",
+      "/api/lesson",
+      // @ts-expect-error テスト用 mock
+      client,
+      { monthlyLimit: USER_MONTHLY_LIMIT },
+    );
+    expect(result).toEqual({
+      ok: false,
+      reason: "monthly_user",
+      retryAfter: 86400,
+    });
+  });
+
+  it("RPC が ok:false (monthly_global) を返したら reason:monthly_global で reject", async () => {
+    const client = makeClient({
+      rpcData: { ok: false, reason: "monthly_global", retry_after: 86400 },
+    });
+    const result = await checkAndRecord(
+      "user-1",
+      "/api/lesson",
+      // @ts-expect-error テスト用 mock
+      client,
+      { globalMonthlyLimit: GLOBAL_MONTHLY_LIMIT },
+    );
+    expect(result).toEqual({
+      ok: false,
+      reason: "monthly_global",
+      retryAfter: 86400,
     });
   });
 
@@ -146,7 +213,7 @@ describe("rate-limit: checkAndRecord", () => {
     expect(ENDPOINT_LIMITS["/api/highlights"]).toBe(60);
   });
 
-  it("retry_after が未設定なら RATE_LIMIT_WINDOW_SEC フォールバック", async () => {
+  it("retry_after / reason が未設定なら minute + RATE_LIMIT_WINDOW_SEC フォールバック", async () => {
     const client = makeClient({ rpcData: { ok: false } });
     const result = await checkAndRecord(
       "user-1",
@@ -156,6 +223,7 @@ describe("rate-limit: checkAndRecord", () => {
     );
     if (!result.ok) {
       expect(result.retryAfter).toBe(RATE_LIMIT_WINDOW_SEC);
+      expect(result.reason).toBe("minute");
     } else {
       throw new Error("expected ok:false");
     }
