@@ -40,3 +40,8 @@ coverage/
 *.local
 # Add to .gitignore (missing patterns)
 credentials.json
+
+# Internal development notes (not for public repo)
+memory.md
+knowledge.md
+todo.md
