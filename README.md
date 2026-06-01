@@ -1,5 +1,8 @@
 # StudyStream
 
+> **⚠️ This project is archived and no longer actively maintained (2026-06).**
+> 本リポジトリはアーカイブされ、現在アクティブな開発は行っていません。
+
 YouTube ライクな受動視聴 UX に **インプット → 即テスト** ループを組み合わせ、AI がリアルタイムにレッスン+クイズを生成する学習アプリ。
 
 ## 現状: Phase 1 Web MVP 完了（2026-05-09）
